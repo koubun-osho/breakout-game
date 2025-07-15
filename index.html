@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ブロック崩し</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #222;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+        #gameContainer {
+            text-align: center;
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        #gameCanvas {
+            background-color: #000;
+            display: block;
+            margin: 0 auto;
+        }
+        #gameInfo {
+            color: #fff;
+            padding: 10px;
+            font-size: 18px;
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+        }
+        #score, #lives {
+            display: inline-block;
+            margin: 0 20px;
+        }
+        #gameOver, #gameStart {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #fff;
+            font-size: 24px;
+            text-align: center;
+            background-color: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 10px;
+            display: none;
+        }
+        #gameOver h2, #gameStart h2 {
+            margin: 0 0 10px 0;
+            font-size: 36px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 18px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #instructions {
+            color: #aaa;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <div id="gameInfo">
+            <span id="score">スコア: 0</span>
+            <span id="lives">ライフ: 3</span>
+            <button id="soundToggle" onclick="toggleSound()" style="margin-left: 20px; padding: 5px 10px; font-size: 14px;">🔊 ON</button>
+        </div>
+        <canvas id="gameCanvas"></canvas>
+        <div id="gameStart">
+            <h2>ブロック崩し</h2>
+            <p>パドルを操作してボールを跳ね返し、<br>すべてのブロックを破壊しよう！</p>
+            <button onclick="startGame()">ゲーム開始</button>
+            <div id="instructions">
+                操作方法:<br>
+                マウス / 矢印キー / タッチで移動<br>
+                スペースキーで一時停止<br>
+                音声のON/OFFも可能
+            </div>
+        </div>
+        <div id="gameOver">
+            <h2>ゲームオーバー</h2>
+            <p id="finalScore">最終スコア: 0</p>
+            <button onclick="resetGame()">もう一度プレイ</button>
+        </div>
+    </div>
+    <script src="game.js"></script>
+</body>
+</html>
