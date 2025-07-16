@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#000000"/>
+  <rect x="50" y="50" width="412" height="100" fill="#4CAF50" rx="10"/>
+  <rect x="50" y="170" width="412" height="20" fill="#FF5722" rx="5"/>
+  <rect x="50" y="200" width="412" height="20" fill="#FF9800" rx="5"/>
+  <rect x="50" y="230" width="412" height="20" fill="#FFC107" rx="5"/>
+  <rect x="50" y="260" width="412" height="20" fill="#FFEB3B" rx="5"/>
+  <rect x="50" y="290" width="412" height="20" fill="#8BC34A" rx="5"/>
+  <rect x="50" y="320" width="412" height="20" fill="#4CAF50" rx="5"/>
+  <rect x="50" y="350" width="412" height="20" fill="#00BCD4" rx="5"/>
+  <rect x="200" y="430" width="112" height="15" fill="#FFFFFF" rx="7"/>
+  <circle cx="256" cy="400" r="8" fill="#FFFFFF"/>
+  <text x="256" y="480" text-anchor="middle" fill="#FFFFFF" font-family="Arial" font-size="24" font-weight="bold">ブロック崩し</text>
+</svg>

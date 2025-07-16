@@ -21,6 +21,7 @@ const particles = [];
 
 // パワーアップシステム
 const powerUps = [];
+const lasers = [];
 let activePowerUps = {
     multiball: false,
     paddleSize: 1.0,
@@ -28,9 +29,22 @@ let activePowerUps = {
     laser: false,
     catch: false
 };
+let caughtBall = null;
 
 // ハイスコア
 let highScores = [];
+
+// アチーブメントシステム
+let achievements = [];
+let gameStats = {
+    totalBlocksDestroyed: 0,
+    totalScore: 0,
+    totalPlayTime: 0,
+    maxCombo: 0,
+    levelReached: 0,
+    powerUpsCollected: 0,
+    totalGames: 0
+};
 
 // 設定
 let gameSettings = {
@@ -38,7 +52,8 @@ let gameSettings = {
     volume: 0.5,
     sensitivity: 1.0,
     particlesEnabled: true,
-    theme: 'modern'
+    theme: 'modern',
+    accessibilityMode: 'normal'
 };
 
 // テーマ設定
@@ -358,6 +373,136 @@ function checkPowerUpCollision() {
             activatePowerUp(powerUp.type);
             powerUps.splice(i, 1);
             playPowerUpSound(powerUp.type);
+            
+            // 統計更新
+            gameStats.powerUpsCollected++;
+            updateGameStats();
+        }
+    }
+}
+
+// レーザークラス
+class Laser {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.width = 3;
+        this.height = 10;
+        this.speed = 8;
+    }
+    
+    update() {
+        this.y -= this.speed;
+        return this.y > 0;
+    }
+    
+    draw(ctx) {
+        ctx.fillStyle = '#FF0000';
+        ctx.fillRect(this.x, this.y, this.width, this.height);
+        
+        // レーザーの光る効果
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = '#FF0000';
+        ctx.fillRect(this.x, this.y, this.width, this.height);
+        ctx.shadowBlur = 0;
+    }
+}
+
+function fireLaser() {
+    if (activePowerUps.laser && lasers.length < 3) {
+        lasers.push(new Laser(paddle.x + paddle.width / 2 - 1.5, paddle.y - 10));
+        playSound(1500, 0.1, 0.1, 'sawtooth');
+    }
+}
+
+function updateLasers() {
+    for (let i = lasers.length - 1; i >= 0; i--) {
+        if (!lasers[i].update()) {
+            lasers.splice(i, 1);
+        }
+    }
+}
+
+function drawLasers() {
+    lasers.forEach(laser => laser.draw(ctx));
+}
+
+function checkLaserCollision() {
+    for (let i = lasers.length - 1; i >= 0; i--) {
+        const laser = lasers[i];
+        
+        for (let r = 0; r < bricks.rows; r++) {
+            for (let c = 0; c < bricks.cols; c++) {
+                const brick = bricks.array[r][c];
+                if (brick.status === 1) {
+                    if (laser.x < brick.x + bricks.width &&
+                        laser.x + laser.width > brick.x &&
+                        laser.y < brick.y + bricks.height &&
+                        laser.y + laser.height > brick.y) {
+                        
+                        // レーザーがブロックに当たった
+                        lasers.splice(i, 1);
+                        
+                        // ブロックを破壊
+                        if (brick.type === 'hard') {
+                            brick.hits--;
+                            if (brick.hits <= 0) {
+                                brick.status = 0;
+                            }
+                        } else if (brick.type === 'bomb') {
+                            brick.status = 0;
+                            explodeBomb(r, c);
+                        } else {
+                            brick.status = 0;
+                        }
+                        
+                        if (brick.status === 0) {
+                            playBrickBreakSound();
+                            
+                            // パーティクルエフェクト
+                            const brickCenterX = brick.x + bricks.width / 2;
+                            const brickCenterY = brick.y + bricks.height / 2;
+                            const theme = themes[gameSettings.theme];
+                            let color = theme.brickColors[r];
+                            
+                            if (brick.type === 'hard') {
+                                color = '#C0C0C0';
+                            } else if (brick.type === 'bomb') {
+                                color = '#FF4500';
+                            } else if (brick.type === 'moving') {
+                                color = '#FFD700';
+                            }
+                            
+                            createParticles(brickCenterX, brickCenterY, color, 8);
+                            
+                            // スコア
+                            let baseScore = r === 0 ? 20 : 10;
+                            if (brick.type === 'hard') {
+                                baseScore = 25;
+                            } else if (brick.type === 'bomb') {
+                                baseScore = 50;
+                            } else if (brick.type === 'moving') {
+                                baseScore = 30;
+                            }
+                            
+                            score += baseScore;
+                            updateScore();
+                            
+                            // 統計更新
+                            gameStats.totalBlocksDestroyed++;
+                            updateGameStats();
+                            
+                            // レベルクリアチェック
+                            const destroyedBricks = countDestroyedBricks();
+                            if (destroyedBricks === totalBricks) {
+                                nextLevel();
+                            }
+                        }
+                        
+                        break;
+                    }
+                }
+            }
         }
     }
 }
@@ -388,10 +533,16 @@ function activatePowerUp(type) {
             }, 5000);
             break;
         case 'laser':
-            // レーザー実装は後で
+            activePowerUps.laser = true;
+            setTimeout(() => {
+                activePowerUps.laser = false;
+            }, 15000);
             break;
         case 'catch':
-            // キャッチ実装は後で
+            activePowerUps.catch = true;
+            setTimeout(() => {
+                activePowerUps.catch = false;
+            }, 20000);
             break;
     }
 }
@@ -421,6 +572,159 @@ function addHighScore(score) {
 function isHighScore(score) {
     if (highScores.length < 10) return true;
     return score > highScores[highScores.length - 1].score;
+}
+
+// アチーブメントシステム
+const achievementDefinitions = [
+    {
+        id: 'first_game',
+        name: '初回プレイ',
+        description: '初めてゲームをプレイした',
+        icon: '🎮',
+        condition: () => gameStats.totalGames >= 1
+    },
+    {
+        id: 'score_1000',
+        name: 'スコア達成者',
+        description: '1000点を獲得した',
+        icon: '🏆',
+        condition: () => gameStats.totalScore >= 1000
+    },
+    {
+        id: 'combo_master',
+        name: 'コンボマスター',
+        description: '10コンボを達成した',
+        icon: '🔥',
+        condition: () => gameStats.maxCombo >= 10
+    },
+    {
+        id: 'level_5',
+        name: 'レベル5到達',
+        description: 'レベル5に到達した',
+        icon: '🌟',
+        condition: () => gameStats.levelReached >= 5
+    },
+    {
+        id: 'power_collector',
+        name: 'パワーアップコレクター',
+        description: '50個のパワーアップを収集した',
+        icon: '⚡',
+        condition: () => gameStats.powerUpsCollected >= 50
+    },
+    {
+        id: 'destroyer',
+        name: 'ブロック破壊王',
+        description: '500個のブロックを破壊した',
+        icon: '💥',
+        condition: () => gameStats.totalBlocksDestroyed >= 500
+    },
+    {
+        id: 'marathon',
+        name: 'マラソンプレイヤー',
+        description: '30分間プレイした',
+        icon: '⏰',
+        condition: () => gameStats.totalPlayTime >= 1800000 // 30分
+    },
+    {
+        id: 'perfectionist',
+        name: 'パーフェクト',
+        description: '10000点を獲得した',
+        icon: '👑',
+        condition: () => gameStats.totalScore >= 10000
+    }
+];
+
+function loadAchievements() {
+    const storedAchievements = localStorage.getItem('breakoutAchievements');
+    const storedStats = localStorage.getItem('breakoutStats');
+    
+    if (storedAchievements) {
+        achievements = JSON.parse(storedAchievements);
+    }
+    
+    if (storedStats) {
+        gameStats = JSON.parse(storedStats);
+    }
+}
+
+function saveAchievements() {
+    localStorage.setItem('breakoutAchievements', JSON.stringify(achievements));
+    localStorage.setItem('breakoutStats', JSON.stringify(gameStats));
+}
+
+function checkAchievements() {
+    achievementDefinitions.forEach(def => {
+        if (!achievements.includes(def.id) && def.condition()) {
+            unlockAchievement(def);
+        }
+    });
+}
+
+function unlockAchievement(achievement) {
+    achievements.push(achievement.id);
+    saveAchievements();
+    
+    // アチーブメント通知を表示
+    showAchievementNotification(achievement);
+    
+    // 特別な効果音
+    playSound(1500, 0.3, 0.2, 'sine');
+    setTimeout(() => playSound(1200, 0.3, 0.2, 'sine'), 150);
+    setTimeout(() => playSound(1800, 0.5, 0.2, 'sine'), 300);
+}
+
+function showAchievementNotification(achievement) {
+    const notification = document.createElement('div');
+    notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: linear-gradient(135deg, #4CAF50, #45a049);
+        color: white;
+        padding: 15px 20px;
+        border-radius: 10px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        z-index: 2000;
+        font-size: 16px;
+        font-weight: bold;
+        transform: translateX(400px);
+        transition: transform 0.3s ease;
+        max-width: 300px;
+    `;
+    
+    notification.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 24px;">${achievement.icon}</span>
+            <div>
+                <div style="font-size: 18px; margin-bottom: 5px;">アチーブメント解除！</div>
+                <div style="font-size: 16px; font-weight: normal;">${achievement.name}</div>
+                <div style="font-size: 14px; opacity: 0.9; font-weight: normal;">${achievement.description}</div>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(notification);
+    
+    // アニメーション
+    setTimeout(() => {
+        notification.style.transform = 'translateX(0)';
+    }, 100);
+    
+    setTimeout(() => {
+        notification.style.transform = 'translateX(400px)';
+        setTimeout(() => {
+            document.body.removeChild(notification);
+        }, 300);
+    }, 4000);
+}
+
+function updateGameStats() {
+    gameStats.totalScore = Math.max(gameStats.totalScore, score);
+    gameStats.maxCombo = Math.max(gameStats.maxCombo, combo);
+    gameStats.levelReached = Math.max(gameStats.levelReached, currentLevel);
+    
+    saveAchievements();
+    checkAchievements();
 }
 
 function resizeCanvas() {
@@ -715,6 +1019,10 @@ function checkBallCollision(ballObj) {
                     // パワーアップをドロップ
                     if (b.status === 0) {
                         createPowerUp(brickCenterX - 15, brickCenterY);
+                        
+                        // 統計更新
+                        gameStats.totalBlocksDestroyed++;
+                        updateGameStats();
                     }
                     
                     const currentTime = Date.now();
@@ -826,6 +1134,13 @@ function moveBall() {
 }
 
 function moveSingleBall(ballObj) {
+    // キャッチされているボールの場合、パドルと一緒に移動
+    if (caughtBall === ballObj) {
+        ballObj.x = paddle.x + paddle.width / 2;
+        ballObj.y = paddle.y - ballObj.radius;
+        return true;
+    }
+    
     ballObj.x += ballObj.dx;
     ballObj.y += ballObj.dy;
     
@@ -841,17 +1156,28 @@ function moveSingleBall(ballObj) {
     if (ballObj.x > paddle.x && ballObj.x < paddle.x + paddle.width &&
         ballObj.y + ballObj.radius > paddle.y && ballObj.y - ballObj.radius < paddle.y + paddle.height) {
         
-        const hitPos = (ballObj.x - paddle.x) / paddle.width;
-        const angle = (hitPos - 0.5) * Math.PI / 3;
-        
-        ballObj.dx = ballObj.speed * Math.sin(angle);
-        ballObj.dy = -ballObj.speed * Math.cos(angle);
-        
-        playPaddleHitSound();
+        if (activePowerUps.catch && !caughtBall) {
+            // キャッチパドルの場合、ボールを捕捉
+            caughtBall = ballObj;
+            playSound(800, 0.2, 0.1, 'sine');
+            return true;
+        } else {
+            // 通常の反射
+            const hitPos = (ballObj.x - paddle.x) / paddle.width;
+            const angle = (hitPos - 0.5) * Math.PI / 3;
+            
+            ballObj.dx = ballObj.speed * Math.sin(angle);
+            ballObj.dy = -ballObj.speed * Math.cos(angle);
+            
+            playPaddleHitSound();
+        }
     }
     
     // 画面外に出た場合
     if (ballObj.y - ballObj.radius > canvas.height) {
+        if (caughtBall === ballObj) {
+            caughtBall = null;
+        }
         return false; // ボールを削除
     }
     
@@ -890,8 +1216,10 @@ function gameOver() {
         addHighScore(score);
         highScoreMsg.textContent = '🏆 ハイスコア達成！';
         highScoreMsg.style.display = 'block';
+        announceGameState('ハイスコア達成！ 最終スコア: ' + score);
     } else {
         highScoreMsg.style.display = 'none';
+        announceGameState('ゲームオーバー。最終スコア: ' + score);
     }
     finalScoreElement.textContent = `最終スコア: ${score}`;
     gameOverDiv.style.display = 'block';
@@ -904,6 +1232,9 @@ function nextLevel() {
     // レベルクリアボーナス
     score += currentLevel * 100;
     updateScore();
+    
+    // アクセシビリティ通知
+    announceGameState(`レベル ${currentLevel} に進みました`);
     
     // 短い間隔でのレベル遷移
     setTimeout(() => {
@@ -992,6 +1323,7 @@ function draw() {
         drawBall();
         drawParticles();
         drawPowerUps();
+        drawLasers();
     }
     
     // デバッグ情報表示
@@ -1021,6 +1353,8 @@ function update() {
     updateParticles();
     updatePowerUps();
     checkPowerUpCollision();
+    updateLasers();
+    checkLaserCollision();
     
     paddle.x += paddle.dx;
     if (paddle.x < 0) paddle.x = 0;
@@ -1060,6 +1394,8 @@ function startGame() {
     particles.length = 0;
     powerUps.length = 0;
     balls.length = 0;
+    lasers.length = 0;
+    caughtBall = null;
     
     // パワーアップをリセット
     activePowerUps = {
@@ -1074,6 +1410,10 @@ function startGame() {
     updateScore();
     updateLives();
     updateLevel();
+    
+    // 統計更新
+    gameStats.totalGames++;
+    updateGameStats();
     
     // BGM開始
     playBGM();
@@ -1115,7 +1455,18 @@ document.addEventListener('keydown', (e) => {
         paddle.dx = paddle.speed;
     } else if (e.key === ' ') {
         e.preventDefault();
-        isPaused = !isPaused;
+        if (caughtBall) {
+            // キャッチされたボールをリリース
+            caughtBall.dx = caughtBall.speed * 0.5;
+            caughtBall.dy = -caughtBall.speed;
+            caughtBall = null;
+            playSound(600, 0.1, 0.1, 'sine');
+        } else {
+            isPaused = !isPaused;
+        }
+    } else if (e.key === 'x' || e.key === 'X') {
+        e.preventDefault();
+        fireLaser();
     }
 });
 
@@ -1189,6 +1540,7 @@ function saveSettings() {
     localStorage.setItem('breakoutSettings', JSON.stringify(gameSettings));
     hideSettings();
     applyDifficulty();
+    applyAccessibilitySettings();
 }
 
 function applyDifficulty() {
@@ -1216,6 +1568,7 @@ function showSettings() {
     document.getElementById('sensitivityValue').textContent = Math.round(gameSettings.sensitivity * 100) + '%';
     document.getElementById('particleToggle').value = gameSettings.particlesEnabled ? 'on' : 'off';
     document.getElementById('themeSelect').value = gameSettings.theme;
+    document.getElementById('accessibilityMode').value = gameSettings.accessibilityMode;
     
     settingsDiv.style.display = 'block';
 }
@@ -1249,10 +1602,98 @@ function updateTheme() {
     gameSettings.theme = document.getElementById('themeSelect').value;
 }
 
+function updateAccessibility() {
+    gameSettings.accessibilityMode = document.getElementById('accessibilityMode').value;
+    applyAccessibilitySettings();
+}
+
+function applyAccessibilitySettings() {
+    const body = document.body;
+    const gameContainer = document.getElementById('gameContainer');
+    
+    // 既存のアクセシビリティクラスを削除
+    body.classList.remove('high-contrast', 'large-ui');
+    
+    switch (gameSettings.accessibilityMode) {
+        case 'high-contrast':
+            body.classList.add('high-contrast');
+            break;
+        case 'large-ui':
+            body.classList.add('large-ui');
+            break;
+    }
+}
+
+// 音声でのゲーム状態通知
+function announceGameState(message) {
+    const announcement = document.createElement('div');
+    announcement.setAttribute('aria-live', 'assertive');
+    announcement.setAttribute('aria-atomic', 'true');
+    announcement.style.position = 'absolute';
+    announcement.style.left = '-10000px';
+    announcement.style.width = '1px';
+    announcement.style.height = '1px';
+    announcement.style.overflow = 'hidden';
+    announcement.textContent = message;
+    
+    document.body.appendChild(announcement);
+    
+    setTimeout(() => {
+        document.body.removeChild(announcement);
+    }, 1000);
+}
+
+function showAchievements() {
+    const achievementsDiv = document.getElementById('achievements');
+    const achievementsList = document.getElementById('achievementsList');
+    const statsDisplay = document.getElementById('statsDisplay');
+    
+    achievementsList.innerHTML = '';
+    
+    achievementDefinitions.forEach(def => {
+        const item = document.createElement('div');
+        const isUnlocked = achievements.includes(def.id);
+        
+        item.className = `achievement-item ${isUnlocked ? 'unlocked' : 'locked'}`;
+        item.innerHTML = `
+            <div class="achievement-icon">${isUnlocked ? def.icon : '🔒'}</div>
+            <div class="achievement-info">
+                <div class="achievement-name">${def.name}</div>
+                <div class="achievement-description">${def.description}</div>
+            </div>
+        `;
+        
+        achievementsList.appendChild(item);
+    });
+    
+    // 統計情報を表示
+    const playTimeMinutes = Math.floor(gameStats.totalPlayTime / 60000);
+    const playTimeSeconds = Math.floor((gameStats.totalPlayTime % 60000) / 1000);
+    
+    statsDisplay.innerHTML = `
+        <p>総スコア: ${gameStats.totalScore.toLocaleString()}</p>
+        <p>破壊したブロック: ${gameStats.totalBlocksDestroyed}</p>
+        <p>最大コンボ: ${gameStats.maxCombo}</p>
+        <p>到達レベル: ${gameStats.levelReached}</p>
+        <p>パワーアップ取得数: ${gameStats.powerUpsCollected}</p>
+        <p>プレイ回数: ${gameStats.totalGames}</p>
+        <p>総プレイ時間: ${playTimeMinutes}分${playTimeSeconds}秒</p>
+        <p>実績達成率: ${achievements.length}/${achievementDefinitions.length} (${Math.round(achievements.length / achievementDefinitions.length * 100)}%)</p>
+    `;
+    
+    achievementsDiv.style.display = 'block';
+}
+
+function hideAchievements() {
+    document.getElementById('achievements').style.display = 'none';
+}
+
 window.onload = () => {
     initAudio();
     loadHighScores();
     loadSettings();
+    loadAchievements();
+    applyAccessibilitySettings();
     resizeCanvas();
     initBricks();
     resetPositions();

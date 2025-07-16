@@ -4,6 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ブロック崩し</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#4CAF50">
+    <meta name="description" content="現代的なパワーアップとエフェクトを搭載した次世代ブロック崩しゲーム">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+    <link rel="apple-touch-icon" href="icon-192.png">
     <style>
         body {
             margin: 0;
@@ -151,27 +156,118 @@
             color: #4CAF50;
             font-weight: bold;
         }
+        #achievements {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #fff;
+            font-size: 18px;
+            text-align: center;
+            background-color: rgba(0, 0, 0, 0.9);
+            padding: 20px;
+            border-radius: 10px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        #achievements h2 {
+            margin: 0 0 20px 0;
+            font-size: 28px;
+        }
+        .achievement-item {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            margin: 10px 0;
+            background-color: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            text-align: left;
+        }
+        .achievement-item.unlocked {
+            background-color: rgba(76, 175, 80, 0.2);
+        }
+        .achievement-item.locked {
+            opacity: 0.5;
+        }
+        .achievement-icon {
+            font-size: 24px;
+            margin-right: 15px;
+            width: 30px;
+            text-align: center;
+        }
+        .achievement-info {
+            flex: 1;
+        }
+        .achievement-name {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .achievement-description {
+            font-size: 14px;
+            color: #ccc;
+        }
+        
+        /* アクセシビリティ設定 */
+        .high-contrast {
+            filter: contrast(150%);
+        }
+        .high-contrast button {
+            background-color: #000 !important;
+            color: #fff !important;
+            border: 2px solid #fff !important;
+        }
+        .high-contrast #gameInfo {
+            background-color: rgba(0, 0, 0, 0.8);
+            padding: 10px;
+            border-radius: 5px;
+        }
+        
+        .large-ui {
+            font-size: 120%;
+        }
+        .large-ui button {
+            padding: 15px 25px !important;
+            font-size: 22px !important;
+        }
+        .large-ui #gameInfo {
+            font-size: 22px !important;
+        }
+        .large-ui #gameInfo button {
+            padding: 10px 15px !important;
+            font-size: 18px !important;
+        }
+        
+        /* フォーカス表示の改善 */
+        button:focus, select:focus, input:focus {
+            outline: 3px solid #4CAF50;
+            outline-offset: 2px;
+        }
     </style>
 </head>
 <body>
     <div id="gameContainer">
-        <div id="gameInfo">
+        <div id="gameInfo" role="status" aria-live="polite">
             <span id="score">スコア: 0</span>
             <span id="lives">ライフ: 3</span>
             <span id="level">レベル: 1</span>
-            <button id="soundToggle" onclick="toggleSound()" style="margin-left: 20px; padding: 5px 10px; font-size: 14px;">🔊 ON</button>
+            <button id="soundToggle" onclick="toggleSound()" style="margin-left: 20px; padding: 5px 10px; font-size: 14px;" aria-label="音声のオン・オフ切り替え">🔊 ON</button>
         </div>
-        <canvas id="gameCanvas"></canvas>
+        <canvas id="gameCanvas" role="application" aria-label="ブロック崩しゲーム画面"></canvas>
         <div id="gameStart">
             <h2>ブロック崩し</h2>
             <p>パドルを操作してボールを跳ね返し、<br>すべてのブロックを破壊しよう！</p>
             <button onclick="startGame()">ゲーム開始</button>
             <button onclick="showHighScores()" style="margin-left: 10px;">ハイスコア</button>
             <button onclick="showSettings()" style="margin-left: 10px;">設定</button>
+            <button onclick="showAchievements()" style="margin-left: 10px;">実績</button>
             <div id="instructions">
                 操作方法:<br>
                 マウス / 矢印キー / タッチで移動<br>
-                スペースキーで一時停止<br>
+                スペースキー：一時停止 / キャッチボールのリリース<br>
+                Xキー：レーザー発射（レーザーパワーアップ時）<br>
                 音声のON/OFFも可能
             </div>
         </div>
@@ -221,10 +317,78 @@
                     <option value="neon">ネオン</option>
                 </select>
             </div>
+            <div class="setting-item">
+                <label class="setting-label">アクセシビリティ</label>
+                <select id="accessibilityMode" class="setting-control" onchange="updateAccessibility()">
+                    <option value="normal">通常</option>
+                    <option value="high-contrast">ハイコントラスト</option>
+                    <option value="large-ui">大きなUI</option>
+                </select>
+            </div>
             <button onclick="saveSettings()">保存</button>
             <button onclick="hideSettings()" style="margin-left: 10px;">キャンセル</button>
         </div>
+        <div id="achievements">
+            <h2>実績</h2>
+            <div id="achievementsList"></div>
+            <div id="statsInfo" style="margin-top: 20px; font-size: 14px; color: #ccc;">
+                <h3>統計情報</h3>
+                <div id="statsDisplay"></div>
+            </div>
+            <button onclick="hideAchievements()">閉じる</button>
+        </div>
     </div>
     <script src="game.js"></script>
+    <script>
+        // Service Worker登録
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then(registration => {
+                        console.log('SW registered: ', registration);
+                    })
+                    .catch(registrationError => {
+                        console.log('SW registration failed: ', registrationError);
+                    });
+            });
+        }
+        
+        // PWAインストールプロンプト
+        let deferredPrompt;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            
+            // インストールボタンを表示
+            const installButton = document.createElement('button');
+            installButton.textContent = 'アプリをインストール';
+            installButton.style.cssText = `
+                position: fixed;
+                top: 10px;
+                right: 10px;
+                z-index: 1000;
+                background: #4CAF50;
+                color: white;
+                border: none;
+                padding: 10px 15px;
+                border-radius: 5px;
+                cursor: pointer;
+                font-size: 14px;
+            `;
+            
+            installButton.addEventListener('click', () => {
+                deferredPrompt.prompt();
+                deferredPrompt.userChoice.then((choiceResult) => {
+                    if (choiceResult.outcome === 'accepted') {
+                        console.log('User accepted the install prompt');
+                    }
+                    deferredPrompt = null;
+                    installButton.remove();
+                });
+            });
+            
+            document.body.appendChild(installButton);
+        });
+    </script>
 </body>
 </html>
