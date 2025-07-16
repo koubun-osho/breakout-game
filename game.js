@@ -53,7 +53,8 @@ let gameSettings = {
     sensitivity: 1.0,
     particlesEnabled: true,
     theme: 'modern',
-    accessibilityMode: 'normal'
+    accessibilityMode: 'normal',
+    bgmEnabled: true
 };
 
 // テーマ設定
@@ -145,57 +146,187 @@ function playGameWinSound() {
     setTimeout(() => playSound(1047, 0.4, 0.15, 'sine'), 600);
 }
 
-// BGM機能
+// BGM機能 - 改良版
+let bgmSequenceTimeout;
+let currentBGMTrack = 0;
+
+// 3つのBGMトラック
+const bgmTracks = [
+    // Track 1: Energetic 8-bit style
+    [
+        { freq: 523, duration: 0.25, type: 'square' },  // C5
+        { freq: 659, duration: 0.25, type: 'square' },  // E5
+        { freq: 784, duration: 0.25, type: 'square' },  // G5
+        { freq: 1047, duration: 0.5, type: 'square' },  // C6
+        { freq: 784, duration: 0.25, type: 'square' },  // G5
+        { freq: 659, duration: 0.25, type: 'square' },  // E5
+        { freq: 523, duration: 0.5, type: 'square' },   // C5
+        { freq: 0, duration: 0.25 },                    // rest
+        
+        { freq: 466, duration: 0.25, type: 'square' },  // Bb4
+        { freq: 587, duration: 0.25, type: 'square' },  // D5
+        { freq: 698, duration: 0.25, type: 'square' },  // F5
+        { freq: 932, duration: 0.5, type: 'square' },   // Bb5
+        { freq: 698, duration: 0.25, type: 'square' },  // F5
+        { freq: 587, duration: 0.25, type: 'square' },  // D5
+        { freq: 466, duration: 0.5, type: 'square' },   // Bb4
+        { freq: 0, duration: 0.25 },                    // rest
+    ],
+    
+    // Track 2: Mysterious ambient
+    [
+        { freq: 220, duration: 1.0, type: 'sine' },     // A3
+        { freq: 277, duration: 1.0, type: 'sine' },     // C#4
+        { freq: 330, duration: 1.0, type: 'sine' },     // E4
+        { freq: 220, duration: 1.0, type: 'sine' },     // A3
+        { freq: 247, duration: 1.0, type: 'sine' },     // B3
+        { freq: 294, duration: 1.0, type: 'sine' },     // D4
+        { freq: 370, duration: 1.0, type: 'sine' },     // F#4
+        { freq: 247, duration: 1.0, type: 'sine' },     // B3
+    ],
+    
+    // Track 3: Upbeat retro
+    [
+        { freq: 392, duration: 0.25, type: 'triangle' }, // G4
+        { freq: 440, duration: 0.25, type: 'triangle' }, // A4
+        { freq: 494, duration: 0.25, type: 'triangle' }, // B4
+        { freq: 523, duration: 0.25, type: 'triangle' }, // C5
+        { freq: 587, duration: 0.5, type: 'triangle' },  // D5
+        { freq: 523, duration: 0.25, type: 'triangle' }, // C5
+        { freq: 494, duration: 0.25, type: 'triangle' }, // B4
+        { freq: 440, duration: 0.5, type: 'triangle' },  // A4
+        { freq: 392, duration: 0.25, type: 'triangle' }, // G4
+        { freq: 440, duration: 0.25, type: 'triangle' }, // A4
+        { freq: 523, duration: 0.5, type: 'triangle' },  // C5
+        { freq: 440, duration: 0.5, type: 'triangle' },  // A4
+        { freq: 392, duration: 1.0, type: 'triangle' },  // G4
+        { freq: 0, duration: 0.5 },                      // rest
+    ]
+];
+
 function playBGM() {
-    if (!bgmEnabled || !audioContext) return;
+    if (!gameSettings.bgmEnabled || !audioContext) return;
     
     stopBGM();
     
     try {
         bgmGain = audioContext.createGain();
         bgmGain.connect(audioContext.destination);
-        bgmGain.gain.value = 0.05 * gameSettings.volume;
+        bgmGain.gain.value = 0.03 * gameSettings.volume; // 少し音量を下げる
         
-        const notes = [
-            { freq: 262, duration: 0.5 }, // C4
-            { freq: 294, duration: 0.5 }, // D4
-            { freq: 330, duration: 0.5 }, // E4
-            { freq: 262, duration: 0.5 }, // C4
-            { freq: 330, duration: 0.5 }, // E4
-            { freq: 392, duration: 0.5 }, // G4
-            { freq: 523, duration: 1.0 }  // C5
-        ];
+        // レベルに応じてBGMトラックを選択
+        if (currentLevel <= 3) {
+            currentBGMTrack = 0; // Energetic
+        } else if (currentLevel <= 6) {
+            currentBGMTrack = 1; // Mysterious
+        } else {
+            currentBGMTrack = 2; // Upbeat
+        }
         
-        playBGMSequence(notes, 0);
+        playBGMSequence(bgmTracks[currentBGMTrack], 0);
     } catch (e) {
         console.log('BGM playback failed:', e);
     }
 }
 
 function playBGMSequence(notes, index) {
-    if (!bgmEnabled || !audioContext || !bgmGain) return;
+    if (!gameSettings.bgmEnabled || !audioContext || !bgmGain) return;
     
     if (index >= notes.length) {
         // ループ
-        setTimeout(() => playBGMSequence(notes, 0), 1000);
+        bgmSequenceTimeout = setTimeout(() => playBGMSequence(notes, 0), 1000);
         return;
     }
     
     const note = notes[index];
-    const oscillator = audioContext.createOscillator();
     
-    oscillator.connect(bgmGain);
-    oscillator.frequency.value = note.freq;
-    oscillator.type = 'square';
+    if (note.freq > 0) {
+        // メロディー用のオシレータ
+        const oscillator = audioContext.createOscillator();
+        oscillator.connect(bgmGain);
+        oscillator.frequency.value = note.freq;
+        oscillator.type = note.type || 'square';
+        
+        const startTime = audioContext.currentTime;
+        oscillator.start(startTime);
+        oscillator.stop(startTime + note.duration);
+        
+        // ハーモニー追加（低音域）
+        if (note.type !== 'sine') {
+            const harmonyOsc = audioContext.createOscillator();
+            const harmonyGain = audioContext.createGain();
+            
+            harmonyOsc.connect(harmonyGain);
+            harmonyGain.connect(bgmGain);
+            harmonyGain.gain.value = 0.3; // ハーモニーは小さめ
+            
+            harmonyOsc.frequency.value = note.freq * 0.5; // オクターブ下
+            harmonyOsc.type = 'sine';
+            
+            harmonyOsc.start(startTime);
+            harmonyOsc.stop(startTime + note.duration);
+        }
+        
+        // アルペジオ効果（高音域）
+        if (currentLevel > 5 && Math.random() < 0.3) {
+            const arpeggioOsc = audioContext.createOscillator();
+            const arpeggioGain = audioContext.createGain();
+            
+            arpeggioOsc.connect(arpeggioGain);
+            arpeggioGain.connect(bgmGain);
+            arpeggioGain.gain.value = 0.15;
+            
+            arpeggioOsc.frequency.value = note.freq * 1.5; // 5度上
+            arpeggioOsc.type = 'sine';
+            
+            arpeggioOsc.start(startTime + 0.1);
+            arpeggioOsc.stop(startTime + note.duration * 0.5);
+        }
+        
+        // ドラムビート（Track 1と3で使用）
+        if ((currentBGMTrack === 0 || currentBGMTrack === 2) && index % 4 === 0) {
+            // キックドラム
+            const kickOsc = audioContext.createOscillator();
+            const kickGain = audioContext.createGain();
+            
+            kickOsc.connect(kickGain);
+            kickGain.connect(bgmGain);
+            kickOsc.frequency.value = 60; // 低音
+            kickOsc.type = 'sine';
+            
+            kickGain.gain.setValueAtTime(0.2, startTime);
+            kickGain.gain.exponentialRampToValueAtTime(0.01, startTime + 0.1);
+            
+            kickOsc.start(startTime);
+            kickOsc.stop(startTime + 0.1);
+        }
+        
+        // ハイハット（Track 1と3で使用）
+        if ((currentBGMTrack === 0 || currentBGMTrack === 2) && index % 2 === 1) {
+            const hihatOsc = audioContext.createOscillator();
+            const hihatGain = audioContext.createGain();
+            
+            hihatOsc.connect(hihatGain);
+            hihatGain.connect(bgmGain);
+            hihatOsc.frequency.value = 8000; // 高音
+            hihatOsc.type = 'sawtooth';
+            
+            hihatGain.gain.setValueAtTime(0.05, startTime);
+            hihatGain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.05);
+            
+            hihatOsc.start(startTime);
+            hihatOsc.stop(startTime + 0.05);
+        }
+    }
     
-    const startTime = audioContext.currentTime;
-    oscillator.start(startTime);
-    oscillator.stop(startTime + note.duration);
-    
-    setTimeout(() => playBGMSequence(notes, index + 1), note.duration * 1000);
+    bgmSequenceTimeout = setTimeout(() => playBGMSequence(notes, index + 1), note.duration * 1000);
 }
 
 function stopBGM() {
+    if (bgmSequenceTimeout) {
+        clearTimeout(bgmSequenceTimeout);
+        bgmSequenceTimeout = null;
+    }
     if (bgmGain) {
         bgmGain.disconnect();
         bgmGain = null;
@@ -1254,6 +1385,11 @@ function nextLevel() {
         
         // レベルアップ音
         playLevelUpSound();
+        
+        // BGMを新しいレベルに合わせて再開
+        if (gameSettings.bgmEnabled) {
+            setTimeout(() => playBGM(), 2000);
+        }
     }, 1000);
     
     // レベル10以上で最終クリア
@@ -1567,6 +1703,7 @@ function showSettings() {
     document.getElementById('sensitivitySlider').value = gameSettings.sensitivity * 100;
     document.getElementById('sensitivityValue').textContent = Math.round(gameSettings.sensitivity * 100) + '%';
     document.getElementById('particleToggle').value = gameSettings.particlesEnabled ? 'on' : 'off';
+    document.getElementById('bgmToggle').value = gameSettings.bgmEnabled ? 'on' : 'off';
     document.getElementById('themeSelect').value = gameSettings.theme;
     document.getElementById('accessibilityMode').value = gameSettings.accessibilityMode;
     
@@ -1596,6 +1733,15 @@ function updateSensitivity() {
 
 function updateParticles() {
     gameSettings.particlesEnabled = document.getElementById('particleToggle').value === 'on';
+}
+
+function updateBGM() {
+    gameSettings.bgmEnabled = document.getElementById('bgmToggle').value === 'on';
+    if (gameSettings.bgmEnabled && gameState === 'playing') {
+        playBGM();
+    } else {
+        stopBGM();
+    }
 }
 
 function updateTheme() {

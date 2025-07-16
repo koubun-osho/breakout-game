@@ -299,6 +299,13 @@
                 <input type="range" id="volumeSlider" min="0" max="100" value="50" class="setting-control" oninput="updateVolume()">
             </div>
             <div class="setting-item">
+                <label class="setting-label">BGM</label>
+                <select id="bgmToggle" class="setting-control" onchange="updateBGM()">
+                    <option value="on" selected>ON</option>
+                    <option value="off">OFF</option>
+                </select>
+            </div>
+            <div class="setting-item">
                 <label class="setting-label">パドル感度 <span class="range-value" id="sensitivityValue">100%</span></label>
                 <input type="range" id="sensitivitySlider" min="50" max="150" value="100" class="setting-control" oninput="updateSensitivity()">
             </div>
