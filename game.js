@@ -2,6 +2,7 @@ const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 const scoreElement = document.getElementById('score');
 const livesElement = document.getElementById('lives');
+const levelElement = document.getElementById('level');
 const gameOverDiv = document.getElementById('gameOver');
 const gameStartDiv = document.getElementById('gameStart');
 const finalScoreElement = document.getElementById('finalScore');
@@ -12,10 +13,68 @@ let lives = 3;
 let isPaused = false;
 let combo = 0;
 let lastBreakTime = 0;
+let currentLevel = 1;
+let totalBricks = 0;
+
+// パーティクルシステム
+const particles = [];
+
+// パワーアップシステム
+const powerUps = [];
+let activePowerUps = {
+    multiball: false,
+    paddleSize: 1.0,
+    slowMotion: false,
+    laser: false,
+    catch: false
+};
+
+// ハイスコア
+let highScores = [];
+
+// 設定
+let gameSettings = {
+    difficulty: 'normal',
+    volume: 0.5,
+    sensitivity: 1.0,
+    particlesEnabled: true,
+    theme: 'modern'
+};
+
+// テーマ設定
+const themes = {
+    classic: {
+        background: '#000000',
+        paddle: '#FFFFFF',
+        ball: '#FFFFFF',
+        brickColors: ['#FF0000', '#FF4500', '#FFA500', '#FFD700', '#FFFF00', '#ADFF2F', '#00FF00', '#00CED1'],
+        particleGlow: false,
+        backgroundEffect: 'none'
+    },
+    modern: {
+        background: '#000000',
+        paddle: '#FFFFFF',
+        ball: '#FFFFFF',
+        brickColors: ['#FF0000', '#FF4500', '#FFA500', '#FFD700', '#FFFF00', '#ADFF2F', '#00FF00', '#00CED1'],
+        particleGlow: true,
+        backgroundEffect: 'gradient'
+    },
+    neon: {
+        background: '#0a0a0a',
+        paddle: '#00FFFF',
+        ball: '#FF00FF',
+        brickColors: ['#FF0080', '#FF00FF', '#8000FF', '#00FFFF', '#00FF80', '#80FF00', '#FFFF00', '#FF8000'],
+        particleGlow: true,
+        backgroundEffect: 'stars'
+    }
+};
 
 // サウンド関連
 let audioContext;
 let soundEnabled = true;
+let bgmEnabled = true;
+let bgmGain;
+let bgmOscillator;
 
 function initAudio() {
     try {
@@ -38,7 +97,8 @@ function playSound(frequency, duration, volume = 0.1, type = 'sine') {
     oscillator.frequency.value = frequency;
     oscillator.type = type;
     
-    gainNode.gain.setValueAtTime(volume, audioContext.currentTime);
+    const adjustedVolume = volume * gameSettings.volume;
+    gainNode.gain.setValueAtTime(adjustedVolume, audioContext.currentTime);
     gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
     
     oscillator.start(audioContext.currentTime);
@@ -70,6 +130,299 @@ function playGameWinSound() {
     setTimeout(() => playSound(1047, 0.4, 0.15, 'sine'), 600);
 }
 
+// BGM機能
+function playBGM() {
+    if (!bgmEnabled || !audioContext) return;
+    
+    stopBGM();
+    
+    try {
+        bgmGain = audioContext.createGain();
+        bgmGain.connect(audioContext.destination);
+        bgmGain.gain.value = 0.05 * gameSettings.volume;
+        
+        const notes = [
+            { freq: 262, duration: 0.5 }, // C4
+            { freq: 294, duration: 0.5 }, // D4
+            { freq: 330, duration: 0.5 }, // E4
+            { freq: 262, duration: 0.5 }, // C4
+            { freq: 330, duration: 0.5 }, // E4
+            { freq: 392, duration: 0.5 }, // G4
+            { freq: 523, duration: 1.0 }  // C5
+        ];
+        
+        playBGMSequence(notes, 0);
+    } catch (e) {
+        console.log('BGM playback failed:', e);
+    }
+}
+
+function playBGMSequence(notes, index) {
+    if (!bgmEnabled || !audioContext || !bgmGain) return;
+    
+    if (index >= notes.length) {
+        // ループ
+        setTimeout(() => playBGMSequence(notes, 0), 1000);
+        return;
+    }
+    
+    const note = notes[index];
+    const oscillator = audioContext.createOscillator();
+    
+    oscillator.connect(bgmGain);
+    oscillator.frequency.value = note.freq;
+    oscillator.type = 'square';
+    
+    const startTime = audioContext.currentTime;
+    oscillator.start(startTime);
+    oscillator.stop(startTime + note.duration);
+    
+    setTimeout(() => playBGMSequence(notes, index + 1), note.duration * 1000);
+}
+
+function stopBGM() {
+    if (bgmGain) {
+        bgmGain.disconnect();
+        bgmGain = null;
+    }
+}
+
+// 効果音のバリエーション
+function playComboSound(comboCount) {
+    const baseFreq = 800 + (comboCount * 100);
+    playSound(baseFreq, 0.1, 0.15, 'sine');
+}
+
+function playPowerUpSound(type) {
+    const frequencies = {
+        multiball: [1000, 1200, 1400],
+        paddleSize: [800, 1000],
+        slowMotion: [600, 400],
+        laser: [1500, 1800],
+        catch: [1200, 1000]
+    };
+    
+    const freqs = frequencies[type] || [1000];
+    freqs.forEach((freq, index) => {
+        setTimeout(() => playSound(freq, 0.1, 0.2, 'sine'), index * 100);
+    });
+}
+
+function playLevelUpSound() {
+    const melody = [523, 659, 784, 1047];
+    melody.forEach((freq, index) => {
+        setTimeout(() => playSound(freq, 0.2, 0.15, 'sine'), index * 150);
+    });
+}
+
+// パーティクルクラス
+class Particle {
+    constructor(x, y, color) {
+        this.x = x;
+        this.y = y;
+        this.vx = (Math.random() - 0.5) * 8;
+        this.vy = (Math.random() - 0.5) * 8;
+        this.radius = Math.random() * 3 + 1;
+        this.color = color;
+        this.alpha = 1;
+        this.gravity = 0.1;
+        this.life = 60;
+    }
+    
+    update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        this.vy += this.gravity;
+        this.alpha = this.life / 60;
+        this.life--;
+        return this.life > 0;
+    }
+    
+    draw(ctx) {
+        ctx.save();
+        ctx.globalAlpha = this.alpha;
+        ctx.fillStyle = this.color;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+    }
+}
+
+function createParticles(x, y, color, count = 10) {
+    if (!gameSettings.particlesEnabled) return;
+    for (let i = 0; i < count; i++) {
+        particles.push(new Particle(x, y, color));
+    }
+}
+
+function updateParticles() {
+    for (let i = particles.length - 1; i >= 0; i--) {
+        if (!particles[i].update()) {
+            particles.splice(i, 1);
+        }
+    }
+}
+
+function drawParticles() {
+    particles.forEach(particle => particle.draw(ctx));
+}
+
+// パワーアップクラス
+class PowerUp {
+    constructor(x, y, type) {
+        this.x = x;
+        this.y = y;
+        this.width = 30;
+        this.height = 20;
+        this.type = type;
+        this.speed = 2;
+        this.colors = {
+            multiball: '#FF00FF',
+            paddleSize: '#00FF00',
+            slowMotion: '#00FFFF',
+            laser: '#FF0000',
+            catch: '#FFFF00'
+        };
+    }
+    
+    update() {
+        this.y += this.speed;
+        return this.y < canvas.height;
+    }
+    
+    draw(ctx) {
+        const theme = themes[gameSettings.theme];
+        
+        if (gameSettings.theme === 'neon') {
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = this.colors[this.type];
+        }
+        
+        // パワーアップの外枠
+        ctx.strokeStyle = this.colors[this.type];
+        ctx.lineWidth = 2;
+        ctx.strokeRect(this.x, this.y, this.width, this.height);
+        
+        // 内部を半透明で塗りつぶし
+        ctx.fillStyle = this.colors[this.type] + '40';
+        ctx.fillRect(this.x, this.y, this.width, this.height);
+        
+        // タイプの頭文字を表示
+        ctx.fillStyle = this.colors[this.type];
+        ctx.font = 'bold 14px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const labels = {
+            multiball: 'M',
+            paddleSize: 'P',
+            slowMotion: 'S',
+            laser: 'L',
+            catch: 'C'
+        };
+        ctx.fillText(labels[this.type], this.x + this.width / 2, this.y + this.height / 2);
+        
+        ctx.shadowBlur = 0;
+    }
+}
+
+function createPowerUp(x, y) {
+    // 20%の確率でパワーアップをドロップ
+    if (Math.random() < 0.2) {
+        const types = ['multiball', 'paddleSize', 'slowMotion', 'laser', 'catch'];
+        const type = types[Math.floor(Math.random() * types.length)];
+        powerUps.push(new PowerUp(x, y, type));
+    }
+}
+
+function updatePowerUps() {
+    for (let i = powerUps.length - 1; i >= 0; i--) {
+        if (!powerUps[i].update()) {
+            powerUps.splice(i, 1);
+        }
+    }
+}
+
+function drawPowerUps() {
+    powerUps.forEach(powerUp => powerUp.draw(ctx));
+}
+
+function checkPowerUpCollision() {
+    for (let i = powerUps.length - 1; i >= 0; i--) {
+        const powerUp = powerUps[i];
+        if (powerUp.x < paddle.x + paddle.width &&
+            powerUp.x + powerUp.width > paddle.x &&
+            powerUp.y < paddle.y + paddle.height &&
+            powerUp.y + powerUp.height > paddle.y) {
+            
+            activatePowerUp(powerUp.type);
+            powerUps.splice(i, 1);
+            playPowerUpSound(powerUp.type);
+        }
+    }
+}
+
+function activatePowerUp(type) {
+    switch (type) {
+        case 'multiball':
+            if (balls.length === 0) {
+                // メインボールから2つの追加ボールを生成
+                balls.push(new Ball(ball.x, ball.y, ball.speed * 0.7, -ball.speed * 0.7));
+                balls.push(new Ball(ball.x, ball.y, -ball.speed * 0.7, -ball.speed * 0.7));
+            }
+            break;
+        case 'paddleSize':
+            activePowerUps.paddleSize = 1.5;
+            paddle.width = 100 * activePowerUps.paddleSize;
+            setTimeout(() => {
+                activePowerUps.paddleSize = 1.0;
+                paddle.width = 100;
+            }, 10000);
+            break;
+        case 'slowMotion':
+            activePowerUps.slowMotion = true;
+            ball.speed *= 0.5;
+            setTimeout(() => {
+                activePowerUps.slowMotion = false;
+                ball.speed *= 2;
+            }, 5000);
+            break;
+        case 'laser':
+            // レーザー実装は後で
+            break;
+        case 'catch':
+            // キャッチ実装は後で
+            break;
+    }
+}
+
+// ハイスコア関連
+function loadHighScores() {
+    const stored = localStorage.getItem('breakoutHighScores');
+    if (stored) {
+        highScores = JSON.parse(stored);
+    } else {
+        highScores = [];
+    }
+}
+
+function saveHighScores() {
+    localStorage.setItem('breakoutHighScores', JSON.stringify(highScores));
+}
+
+function addHighScore(score) {
+    const date = new Date().toLocaleDateString('ja-JP');
+    highScores.push({ score, date });
+    highScores.sort((a, b) => b.score - a.score);
+    highScores = highScores.slice(0, 10); // トップ10のみ保持
+    saveHighScores();
+}
+
+function isHighScore(score) {
+    if (highScores.length < 10) return true;
+    return score > highScores[highScores.length - 1].score;
+}
+
 function resizeCanvas() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
@@ -84,15 +437,22 @@ const paddle = {
     dx: 0
 };
 
-const ball = {
-    radius: 8,
-    x: 0,
-    y: 0,
-    speed: 5,
-    dx: 5,
-    dy: -5,
-    baseSpeed: 5
-};
+const balls = [];
+
+class Ball {
+    constructor(x, y, dx, dy) {
+        this.radius = 8;
+        this.x = x || 0;
+        this.y = y || 0;
+        this.speed = 5;
+        this.dx = dx || 5;
+        this.dy = dy || -5;
+        this.baseSpeed = 5;
+    }
+}
+
+// メインボール
+const ball = new Ball();
 
 const bricks = {
     rows: 8,
@@ -102,7 +462,7 @@ const bricks = {
     padding: 5,
     offsetTop: 80,
     offsetLeft: 0,
-    colors: ['#FF0000', '#FF4500', '#FFA500', '#FFD700', '#FFFF00', '#ADFF2F', '#00FF00', '#00CED1'],
+    colors: [],
     array: []
 };
 
@@ -121,10 +481,61 @@ function updateBrickLayout() {
 function initBricks() {
     updateBrickLayout();
     bricks.array = [];
+    totalBricks = 0;
+    
     for (let r = 0; r < bricks.rows; r++) {
         bricks.array[r] = [];
         for (let c = 0; c < bricks.cols; c++) {
-            bricks.array[r][c] = { x: 0, y: 0, status: 1 };
+            let type = 'normal';
+            let hits = 1;
+            let shouldCreate = true;
+            
+            // レベルに応じたブロック配置パターン
+            if (currentLevel >= 3) {
+                // レベル3以降は一部のブロックを空にする
+                if (Math.random() < 0.1) {
+                    shouldCreate = false;
+                }
+            }
+            
+            if (shouldCreate) {
+                // 特殊ブロックの生成確率（レベルが上がるほど高くなる）
+                const specialChance = Math.min(0.15 + (currentLevel - 1) * 0.05, 0.4);
+                if (Math.random() < specialChance) {
+                    const types = ['hard', 'bomb', 'moving'];
+                    type = types[Math.floor(Math.random() * types.length)];
+                    
+                    if (type === 'hard') {
+                        hits = Math.min(2 + Math.floor(currentLevel / 3), 3);
+                    } else if (type === 'moving') {
+                        hits = 1;
+                    }
+                }
+                
+                bricks.array[r][c] = { 
+                    x: 0, 
+                    y: 0, 
+                    status: 1,
+                    type: type,
+                    hits: hits,
+                    maxHits: hits,
+                    moveDirection: Math.random() < 0.5 ? 1 : -1,
+                    moveSpeed: 0.5 + (currentLevel - 1) * 0.1
+                };
+                
+                totalBricks++;
+            } else {
+                bricks.array[r][c] = { 
+                    x: 0, 
+                    y: 0, 
+                    status: 0,
+                    type: 'empty',
+                    hits: 0,
+                    maxHits: 0,
+                    moveDirection: 0,
+                    moveSpeed: 0
+                };
+            }
         }
     }
 }
@@ -137,54 +548,196 @@ function resetPositions() {
 }
 
 function drawPaddle() {
-    ctx.fillStyle = '#FFFFFF';
+    const theme = themes[gameSettings.theme];
+    ctx.fillStyle = theme.paddle;
+    
+    if (gameSettings.theme === 'neon') {
+        ctx.shadowBlur = 20;
+        ctx.shadowColor = theme.paddle;
+    }
+    
     ctx.fillRect(paddle.x, paddle.y, paddle.width, paddle.height);
+    ctx.shadowBlur = 0;
 }
 
 function drawBall() {
+    const theme = themes[gameSettings.theme];
+    
+    // メインボールを描画
+    drawSingleBall(ball, theme);
+    
+    // 追加ボールを描画
+    balls.forEach(b => drawSingleBall(b, theme));
+}
+
+function drawSingleBall(ballObj, theme) {
+    if (gameSettings.theme === 'neon') {
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = theme.ball;
+    }
+    
     ctx.beginPath();
-    ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
-    ctx.fillStyle = '#FFFFFF';
+    ctx.arc(ballObj.x, ballObj.y, ballObj.radius, 0, Math.PI * 2);
+    ctx.fillStyle = theme.ball;
     ctx.fill();
     ctx.closePath();
+    ctx.shadowBlur = 0;
 }
 
 function drawBricks() {
+    const theme = themes[gameSettings.theme];
+    
     for (let r = 0; r < bricks.rows; r++) {
         for (let c = 0; c < bricks.cols; c++) {
-            if (bricks.array[r][c].status === 1) {
-                const brickX = c * (bricks.width + bricks.padding) + bricks.offsetLeft;
+            const brick = bricks.array[r][c];
+            if (brick.status === 1) {
+                let brickX = c * (bricks.width + bricks.padding) + bricks.offsetLeft;
                 const brickY = r * (bricks.height + bricks.padding) + bricks.offsetTop;
-                bricks.array[r][c].x = brickX;
-                bricks.array[r][c].y = brickY;
-                ctx.fillStyle = bricks.colors[r];
+                
+                // 移動ブロックの処理
+                if (brick.type === 'moving') {
+                    brick.x += brick.moveDirection * brick.moveSpeed;
+                    
+                    // 画面端での反転
+                    if (brick.x <= 0 || brick.x >= canvas.width - bricks.width) {
+                        brick.moveDirection *= -1;
+                    }
+                    
+                    brickX = brick.x;
+                } else {
+                    brick.x = brickX;
+                }
+                
+                brick.y = brickY;
+                
+                // 特殊ブロック用の色設定
+                let color = theme.brickColors[r];
+                if (brick.type === 'hard') {
+                    color = brick.hits === 2 ? '#C0C0C0' : '#808080'; // シルバー系
+                } else if (brick.type === 'bomb') {
+                    color = '#FF4500'; // オレンジレッド
+                } else if (brick.type === 'moving') {
+                    color = '#FFD700'; // ゴールド
+                }
+                
+                if (gameSettings.theme === 'neon') {
+                    ctx.shadowBlur = 10;
+                    ctx.shadowColor = color;
+                }
+                
+                ctx.fillStyle = color;
                 ctx.fillRect(brickX, brickY, bricks.width, bricks.height);
+                
+                if (gameSettings.theme === 'modern') {
+                    // グラデーション効果
+                    const gradient = ctx.createLinearGradient(brickX, brickY, brickX, brickY + bricks.height);
+                    gradient.addColorStop(0, color);
+                    gradient.addColorStop(1, adjustBrightness(color, -30));
+                    ctx.fillStyle = gradient;
+                    ctx.fillRect(brickX, brickY, bricks.width, bricks.height);
+                }
+                
+                // 特殊ブロックの記号を描画
+                if (brick.type === 'bomb') {
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.font = 'bold 14px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('💣', brickX + bricks.width / 2, brickY + bricks.height / 2);
+                } else if (brick.type === 'hard') {
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.font = 'bold 12px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(brick.hits.toString(), brickX + bricks.width / 2, brickY + bricks.height / 2);
+                } else if (brick.type === 'moving') {
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.font = 'bold 12px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('◆', brickX + bricks.width / 2, brickY + bricks.height / 2);
+                }
+                
+                ctx.shadowBlur = 0;
             }
         }
     }
 }
 
 function collisionDetection() {
+    // メインボールの衝突検出
+    checkBallCollision(ball);
+    
+    // 追加ボールの衝突検出
+    balls.forEach(b => checkBallCollision(b));
+}
+
+function checkBallCollision(ballObj) {
     for (let r = 0; r < bricks.rows; r++) {
         for (let c = 0; c < bricks.cols; c++) {
             const b = bricks.array[r][c];
             if (b.status === 1) {
-                if (ball.x > b.x && ball.x < b.x + bricks.width &&
-                    ball.y > b.y && ball.y < b.y + bricks.height) {
-                    ball.dy = -ball.dy;
-                    b.status = 0;
+                if (ballObj.x > b.x && ballObj.x < b.x + bricks.width &&
+                    ballObj.y > b.y && ballObj.y < b.y + bricks.height) {
+                    ballObj.dy = -ballObj.dy;
+                    
+                    // 特殊ブロックの処理
+                    if (b.type === 'hard') {
+                        b.hits--;
+                        if (b.hits <= 0) {
+                            b.status = 0;
+                        }
+                    } else if (b.type === 'bomb') {
+                        b.status = 0;
+                        explodeBomb(r, c);
+                    } else {
+                        b.status = 0;
+                    }
                     
                     playBrickBreakSound();
+                    
+                    // パーティクルエフェクトを生成
+                    const brickCenterX = b.x + bricks.width / 2;
+                    const brickCenterY = b.y + bricks.height / 2;
+                    const theme = themes[gameSettings.theme];
+                    let color = theme.brickColors[r];
+                    
+                    if (b.type === 'hard') {
+                        color = '#C0C0C0';
+                    } else if (b.type === 'bomb') {
+                        color = '#FF4500';
+                    } else if (b.type === 'moving') {
+                        color = '#FFD700';
+                    }
+                    
+                    createParticles(brickCenterX, brickCenterY, color, 15);
+                    
+                    // パワーアップをドロップ
+                    if (b.status === 0) {
+                        createPowerUp(brickCenterX - 15, brickCenterY);
+                    }
                     
                     const currentTime = Date.now();
                     if (currentTime - lastBreakTime < 1000) {
                         combo++;
+                        if (combo > 1) {
+                            playComboSound(combo);
+                        }
                     } else {
                         combo = 0;
                     }
                     lastBreakTime = currentTime;
                     
-                    const baseScore = r === 0 ? 20 : 10;
+                    // スコア計算
+                    let baseScore = r === 0 ? 20 : 10;
+                    if (b.type === 'hard') {
+                        baseScore = 25;
+                    } else if (b.type === 'bomb') {
+                        baseScore = 50;
+                    } else if (b.type === 'moving') {
+                        baseScore = 30;
+                    }
+                    
                     const comboMultiplier = combo > 0 ? 1.5 : 1;
                     score += Math.floor(baseScore * comboMultiplier);
                     updateScore();
@@ -192,13 +745,35 @@ function collisionDetection() {
                     const destroyedBricks = countDestroyedBricks();
                     updateBallSpeed(destroyedBricks);
                     
-                    if (destroyedBricks === bricks.rows * bricks.cols) {
-                        gameWin();
+                    if (destroyedBricks === totalBricks) {
+                        nextLevel();
                     }
                 }
             }
         }
     }
+}
+
+function explodeBomb(row, col) {
+    // 爆弾の周囲3x3のブロックを破壊
+    for (let r = Math.max(0, row - 1); r <= Math.min(bricks.rows - 1, row + 1); r++) {
+        for (let c = Math.max(0, col - 1); c <= Math.min(bricks.cols - 1, col + 1); c++) {
+            if (bricks.array[r][c].status === 1) {
+                bricks.array[r][c].status = 0;
+                
+                // 爆発エフェクト
+                const brickCenterX = bricks.array[r][c].x + bricks.width / 2;
+                const brickCenterY = bricks.array[r][c].y + bricks.height / 2;
+                createParticles(brickCenterX, brickCenterY, '#FF4500', 10);
+                
+                // 爆発スコア
+                score += 15;
+            }
+        }
+    }
+    
+    // 爆発音
+    playSound(100, 0.3, 0.25, 'sawtooth');
 }
 
 function countDestroyedBricks() {
@@ -228,31 +803,18 @@ function updateBallSpeed(destroyedBricks) {
 }
 
 function moveBall() {
-    ball.x += ball.dx;
-    ball.y += ball.dy;
+    // メインボールの移動
+    moveSingleBall(ball);
     
-    if (ball.x + ball.radius > canvas.width || ball.x - ball.radius < 0) {
-        ball.dx = -ball.dx;
-        playWallHitSound();
-    }
-    if (ball.y - ball.radius < 0) {
-        ball.dy = -ball.dy;
-        playWallHitSound();
+    // 追加ボールの移動
+    for (let i = balls.length - 1; i >= 0; i--) {
+        if (!moveSingleBall(balls[i])) {
+            balls.splice(i, 1);
+        }
     }
     
-    if (ball.x > paddle.x && ball.x < paddle.x + paddle.width &&
-        ball.y + ball.radius > paddle.y && ball.y - ball.radius < paddle.y + paddle.height) {
-        
-        const hitPos = (ball.x - paddle.x) / paddle.width;
-        const angle = (hitPos - 0.5) * Math.PI / 3;
-        
-        ball.dx = ball.speed * Math.sin(angle);
-        ball.dy = -ball.speed * Math.cos(angle);
-        
-        playPaddleHitSound();
-    }
-    
-    if (ball.y - ball.radius > canvas.height) {
+    // 全てのボールが画面外に出た場合
+    if (ball.y - ball.radius > canvas.height && balls.length === 0) {
         lives--;
         updateLives();
         if (lives === 0) {
@@ -263,12 +825,48 @@ function moveBall() {
     }
 }
 
+function moveSingleBall(ballObj) {
+    ballObj.x += ballObj.dx;
+    ballObj.y += ballObj.dy;
+    
+    if (ballObj.x + ballObj.radius > canvas.width || ballObj.x - ballObj.radius < 0) {
+        ballObj.dx = -ballObj.dx;
+        playWallHitSound();
+    }
+    if (ballObj.y - ballObj.radius < 0) {
+        ballObj.dy = -ballObj.dy;
+        playWallHitSound();
+    }
+    
+    if (ballObj.x > paddle.x && ballObj.x < paddle.x + paddle.width &&
+        ballObj.y + ballObj.radius > paddle.y && ballObj.y - ballObj.radius < paddle.y + paddle.height) {
+        
+        const hitPos = (ballObj.x - paddle.x) / paddle.width;
+        const angle = (hitPos - 0.5) * Math.PI / 3;
+        
+        ballObj.dx = ballObj.speed * Math.sin(angle);
+        ballObj.dy = -ballObj.speed * Math.cos(angle);
+        
+        playPaddleHitSound();
+    }
+    
+    // 画面外に出た場合
+    if (ballObj.y - ballObj.radius > canvas.height) {
+        return false; // ボールを削除
+    }
+    
+    return true; // ボールを保持
+}
+
 function resetBall() {
     ball.x = canvas.width / 2;
     ball.y = canvas.height - 80;
     ball.dx = ball.speed;
     ball.dy = -ball.speed;
     paddle.x = canvas.width / 2 - paddle.width / 2;
+    
+    // 追加ボールをクリア
+    balls.length = 0;
 }
 
 function updateScore() {
@@ -279,27 +877,121 @@ function updateLives() {
     livesElement.textContent = `ライフ: ${lives}`;
 }
 
+function updateLevel() {
+    levelElement.textContent = `レベル: ${currentLevel}`;
+}
+
 function gameOver() {
     gameState = 'over';
+    stopBGM();
+    
+    const highScoreMsg = document.getElementById('highScoreMessage');
+    if (score > 0 && isHighScore(score)) {
+        addHighScore(score);
+        highScoreMsg.textContent = '🏆 ハイスコア達成！';
+        highScoreMsg.style.display = 'block';
+    } else {
+        highScoreMsg.style.display = 'none';
+    }
     finalScoreElement.textContent = `最終スコア: ${score}`;
     gameOverDiv.style.display = 'block';
     playGameOverSound();
 }
 
+function nextLevel() {
+    currentLevel++;
+    
+    // レベルクリアボーナス
+    score += currentLevel * 100;
+    updateScore();
+    
+    // 短い間隔でのレベル遷移
+    setTimeout(() => {
+        initBricks();
+        resetPositions();
+        ball.x = canvas.width / 2;
+        ball.y = canvas.height - 80;
+        ball.dx = ball.speed;
+        ball.dy = -ball.speed;
+        
+        // 追加ボールをクリア
+        balls.length = 0;
+        
+        // パワーアップを一部リセット
+        activePowerUps.multiball = false;
+        activePowerUps.slowMotion = false;
+        
+        // レベルアップ音
+        playLevelUpSound();
+    }, 1000);
+    
+    // レベル10以上で最終クリア
+    if (currentLevel > 10) {
+        gameWin();
+    }
+}
+
 function gameWin() {
     gameState = 'win';
-    finalScoreElement.textContent = `クリア！ 最終スコア: ${score}`;
+    stopBGM();
+    
+    const highScoreMsg = document.getElementById('highScoreMessage');
+    if (score > 0 && isHighScore(score)) {
+        addHighScore(score);
+        highScoreMsg.textContent = '🏆 ハイスコア達成！';
+        highScoreMsg.style.display = 'block';
+    } else {
+        highScoreMsg.style.display = 'none';
+    }
+    finalScoreElement.textContent = `全レベルクリア！ 最終スコア: ${score}`;
     gameOverDiv.style.display = 'block';
     playGameWinSound();
 }
 
+function drawBackground() {
+    const theme = themes[gameSettings.theme];
+    
+    if (theme.backgroundEffect === 'gradient') {
+        const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+        gradient.addColorStop(0, '#001122');
+        gradient.addColorStop(1, '#000000');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    } else if (theme.backgroundEffect === 'stars') {
+        ctx.fillStyle = theme.background;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // 星を描画
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+        for (let i = 0; i < 50; i++) {
+            const x = (i * 73) % canvas.width;
+            const y = (i * 91) % canvas.height;
+            const size = (i % 3) + 1;
+            ctx.fillRect(x, y, size, size);
+        }
+    } else {
+        ctx.fillStyle = theme.background;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+}
+
+function adjustBrightness(color, amount) {
+    const hex = color.replace('#', '');
+    const r = Math.max(0, Math.min(255, parseInt(hex.slice(0, 2), 16) + amount));
+    const g = Math.max(0, Math.min(255, parseInt(hex.slice(2, 4), 16) + amount));
+    const b = Math.max(0, Math.min(255, parseInt(hex.slice(4, 6), 16) + amount));
+    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}
+
 function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawBackground();
     
     if (gameState === 'playing' || gameState === 'over' || gameState === 'win') {
         drawBricks();
         drawPaddle();
         drawBall();
+        drawParticles();
+        drawPowerUps();
     }
     
     // デバッグ情報表示
@@ -310,6 +1002,15 @@ function draw() {
         ctx.fillText(`Paddle: (${Math.floor(paddle.x)}, ${Math.floor(paddle.y)})`, 10, canvas.height - 40);
         ctx.fillText(`Canvas: ${canvas.width}x${canvas.height}`, 10, canvas.height - 20);
     }
+    
+    // レベル遷移時のメッセージ
+    if (gameState === 'playing' && currentLevel > 1) {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        ctx.font = 'bold 24px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`Level ${currentLevel}`, canvas.width / 2, 50);
+        ctx.textAlign = 'left';
+    }
 }
 
 function update() {
@@ -317,6 +1018,9 @@ function update() {
     
     moveBall();
     collisionDetection();
+    updateParticles();
+    updatePowerUps();
+    checkPowerUpCollision();
     
     paddle.x += paddle.dx;
     if (paddle.x < 0) paddle.x = 0;
@@ -351,10 +1055,28 @@ function startGame() {
     score = 0;
     lives = 3;
     combo = 0;
+    currentLevel = 1;
     ball.speed = ball.baseSpeed;
+    particles.length = 0;
+    powerUps.length = 0;
+    balls.length = 0;
+    
+    // パワーアップをリセット
+    activePowerUps = {
+        multiball: false,
+        paddleSize: 1.0,
+        slowMotion: false,
+        laser: false,
+        catch: false
+    };
+    paddle.width = 100;
     
     updateScore();
     updateLives();
+    updateLevel();
+    
+    // BGM開始
+    playBGM();
 }
 
 function resetGame() {
@@ -424,8 +1146,113 @@ window.addEventListener('resize', () => {
     }
 });
 
+function showHighScores() {
+    const highScoresDiv = document.getElementById('highScores');
+    const highScoresList = document.getElementById('highScoresList');
+    
+    highScoresList.innerHTML = '';
+    
+    if (highScores.length === 0) {
+        highScoresList.innerHTML = '<p style="text-align: center; color: #888;">まだハイスコアがありません</p>';
+    } else {
+        highScores.forEach((score, index) => {
+            const item = document.createElement('div');
+            item.className = 'high-score-item';
+            item.innerHTML = `
+                <div>
+                    <span class="high-score-rank">${index + 1}.</span>
+                    <span>${score.score}点</span>
+                </div>
+                <div style="color: #888;">${score.date}</div>
+            `;
+            highScoresList.appendChild(item);
+        });
+    }
+    
+    highScoresDiv.style.display = 'block';
+}
+
+function hideHighScores() {
+    document.getElementById('highScores').style.display = 'none';
+}
+
+// 設定関連
+function loadSettings() {
+    const stored = localStorage.getItem('breakoutSettings');
+    if (stored) {
+        gameSettings = JSON.parse(stored);
+        applyDifficulty();
+    }
+}
+
+function saveSettings() {
+    localStorage.setItem('breakoutSettings', JSON.stringify(gameSettings));
+    hideSettings();
+    applyDifficulty();
+}
+
+function applyDifficulty() {
+    const difficulties = {
+        easy: { speedMultiplier: 0.8, paddleWidthMultiplier: 1.2 },
+        normal: { speedMultiplier: 1.0, paddleWidthMultiplier: 1.0 },
+        hard: { speedMultiplier: 1.2, paddleWidthMultiplier: 0.8 },
+        expert: { speedMultiplier: 1.5, paddleWidthMultiplier: 0.6 }
+    };
+    
+    const diff = difficulties[gameSettings.difficulty];
+    ball.baseSpeed = 5 * diff.speedMultiplier;
+    ball.speed = ball.baseSpeed;
+    paddle.width = 100 * diff.paddleWidthMultiplier;
+}
+
+function showSettings() {
+    const settingsDiv = document.getElementById('settings');
+    
+    // 現在の設定を反映
+    document.getElementById('difficultySelect').value = gameSettings.difficulty;
+    document.getElementById('volumeSlider').value = gameSettings.volume * 100;
+    document.getElementById('volumeValue').textContent = Math.round(gameSettings.volume * 100) + '%';
+    document.getElementById('sensitivitySlider').value = gameSettings.sensitivity * 100;
+    document.getElementById('sensitivityValue').textContent = Math.round(gameSettings.sensitivity * 100) + '%';
+    document.getElementById('particleToggle').value = gameSettings.particlesEnabled ? 'on' : 'off';
+    document.getElementById('themeSelect').value = gameSettings.theme;
+    
+    settingsDiv.style.display = 'block';
+}
+
+function hideSettings() {
+    document.getElementById('settings').style.display = 'none';
+}
+
+function updateDifficulty() {
+    gameSettings.difficulty = document.getElementById('difficultySelect').value;
+}
+
+function updateVolume() {
+    const value = document.getElementById('volumeSlider').value;
+    gameSettings.volume = value / 100;
+    document.getElementById('volumeValue').textContent = value + '%';
+}
+
+function updateSensitivity() {
+    const value = document.getElementById('sensitivitySlider').value;
+    gameSettings.sensitivity = value / 100;
+    document.getElementById('sensitivityValue').textContent = value + '%';
+    paddle.speed = 8 * gameSettings.sensitivity;
+}
+
+function updateParticles() {
+    gameSettings.particlesEnabled = document.getElementById('particleToggle').value === 'on';
+}
+
+function updateTheme() {
+    gameSettings.theme = document.getElementById('themeSelect').value;
+}
+
 window.onload = () => {
     initAudio();
+    loadHighScores();
+    loadSettings();
     resizeCanvas();
     initBricks();
     resetPositions();

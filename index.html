@@ -72,6 +72,85 @@
             font-size: 14px;
             margin-top: 10px;
         }
+        #highScores {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #fff;
+            font-size: 18px;
+            text-align: center;
+            background-color: rgba(0, 0, 0, 0.9);
+            padding: 20px;
+            border-radius: 10px;
+            max-width: 400px;
+            width: 90%;
+        }
+        #highScores h2 {
+            margin: 0 0 20px 0;
+            font-size: 28px;
+        }
+        #highScoresList {
+            text-align: left;
+            margin: 20px 0;
+        }
+        .high-score-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+            border-bottom: 1px solid #333;
+        }
+        .high-score-rank {
+            color: #ffd700;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+        #settings {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #fff;
+            font-size: 18px;
+            text-align: center;
+            background-color: rgba(0, 0, 0, 0.9);
+            padding: 20px;
+            border-radius: 10px;
+            max-width: 400px;
+            width: 90%;
+        }
+        #settings h2 {
+            margin: 0 0 20px 0;
+            font-size: 28px;
+        }
+        .setting-item {
+            margin: 20px 0;
+            text-align: left;
+        }
+        .setting-label {
+            display: block;
+            margin-bottom: 10px;
+            color: #ccc;
+        }
+        .setting-control {
+            width: 100%;
+            padding: 5px;
+            font-size: 16px;
+            background-color: #333;
+            color: #fff;
+            border: 1px solid #555;
+            border-radius: 5px;
+        }
+        input[type="range"] {
+            width: 100%;
+            cursor: pointer;
+        }
+        .range-value {
+            color: #4CAF50;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
@@ -79,6 +158,7 @@
         <div id="gameInfo">
             <span id="score">スコア: 0</span>
             <span id="lives">ライフ: 3</span>
+            <span id="level">レベル: 1</span>
             <button id="soundToggle" onclick="toggleSound()" style="margin-left: 20px; padding: 5px 10px; font-size: 14px;">🔊 ON</button>
         </div>
         <canvas id="gameCanvas"></canvas>
@@ -86,6 +166,8 @@
             <h2>ブロック崩し</h2>
             <p>パドルを操作してボールを跳ね返し、<br>すべてのブロックを破壊しよう！</p>
             <button onclick="startGame()">ゲーム開始</button>
+            <button onclick="showHighScores()" style="margin-left: 10px;">ハイスコア</button>
+            <button onclick="showSettings()" style="margin-left: 10px;">設定</button>
             <div id="instructions">
                 操作方法:<br>
                 マウス / 矢印キー / タッチで移動<br>
@@ -96,7 +178,51 @@
         <div id="gameOver">
             <h2>ゲームオーバー</h2>
             <p id="finalScore">最終スコア: 0</p>
+            <p id="highScoreMessage" style="color: #ffd700; font-size: 20px; margin: 10px 0;"></p>
             <button onclick="resetGame()">もう一度プレイ</button>
+            <button onclick="showHighScores()" style="margin-left: 10px;">ハイスコア</button>
+        </div>
+        <div id="highScores">
+            <h2>ハイスコア TOP 10</h2>
+            <div id="highScoresList"></div>
+            <button onclick="hideHighScores()">閉じる</button>
+        </div>
+        <div id="settings">
+            <h2>設定</h2>
+            <div class="setting-item">
+                <label class="setting-label">難易度</label>
+                <select id="difficultySelect" class="setting-control" onchange="updateDifficulty()">
+                    <option value="easy">Easy - 初心者向け</option>
+                    <option value="normal" selected>Normal - 標準</option>
+                    <option value="hard">Hard - 上級者向け</option>
+                    <option value="expert">Expert - エキスパート</option>
+                </select>
+            </div>
+            <div class="setting-item">
+                <label class="setting-label">音量 <span class="range-value" id="volumeValue">50%</span></label>
+                <input type="range" id="volumeSlider" min="0" max="100" value="50" class="setting-control" oninput="updateVolume()">
+            </div>
+            <div class="setting-item">
+                <label class="setting-label">パドル感度 <span class="range-value" id="sensitivityValue">100%</span></label>
+                <input type="range" id="sensitivitySlider" min="50" max="150" value="100" class="setting-control" oninput="updateSensitivity()">
+            </div>
+            <div class="setting-item">
+                <label class="setting-label">パーティクルエフェクト</label>
+                <select id="particleToggle" class="setting-control" onchange="updateParticles()">
+                    <option value="on" selected>ON</option>
+                    <option value="off">OFF</option>
+                </select>
+            </div>
+            <div class="setting-item">
+                <label class="setting-label">テーマ</label>
+                <select id="themeSelect" class="setting-control" onchange="updateTheme()">
+                    <option value="classic">クラシック</option>
+                    <option value="modern" selected>モダン</option>
+                    <option value="neon">ネオン</option>
+                </select>
+            </div>
+            <button onclick="saveSettings()">保存</button>
+            <button onclick="hideSettings()" style="margin-left: 10px;">キャンセル</button>
         </div>
     </div>
     <script src="game.js"></script>
