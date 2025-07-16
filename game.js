@@ -901,16 +901,36 @@ const bricks = {
     array: []
 };
 
+function getBrickLayout() {
+    // レベルに応じてブロックのレイアウトを調整
+    if (currentLevel <= 2) {
+        return { rows: 4, cols: 8, heightMultiplier: 1.5 };
+    } else if (currentLevel <= 4) {
+        return { rows: 5, cols: 10, heightMultiplier: 1.3 };
+    } else if (currentLevel <= 6) {
+        return { rows: 6, cols: 12, heightMultiplier: 1.2 };
+    } else {
+        return { rows: 8, cols: 15, heightMultiplier: 1.0 };
+    }
+}
+
 function updateBrickLayout() {
+    const layout = getBrickLayout();
+    
+    // 現在のレベルに応じてブロック配置を更新
+    bricks.rows = layout.rows;
+    bricks.cols = layout.cols;
+    
     const totalCols = bricks.cols;
     const totalPadding = (totalCols - 1) * bricks.padding;
     const availableWidth = canvas.width - 40;
     bricks.width = Math.floor((availableWidth - totalPadding) / totalCols);
-    bricks.height = 25;
+    bricks.height = Math.floor(25 * layout.heightMultiplier);
     bricks.offsetLeft = 20;
     
     console.log('Canvas size:', canvas.width, 'x', canvas.height);
     console.log('Brick size:', bricks.width, 'x', bricks.height);
+    console.log('Level:', currentLevel, 'Layout:', layout);
 }
 
 function initBricks() {
@@ -926,9 +946,14 @@ function initBricks() {
             let shouldCreate = true;
             
             // レベルに応じたブロック配置パターン
-            if (currentLevel >= 3) {
-                // レベル3以降は一部のブロックを空にする
+            if (currentLevel >= 7) {
+                // レベル7以降は一部のブロックを空にする
                 if (Math.random() < 0.1) {
+                    shouldCreate = false;
+                }
+            } else if (currentLevel >= 5) {
+                // レベル5-6は少しだけ空きを作る
+                if (Math.random() < 0.05) {
                     shouldCreate = false;
                 }
             }
