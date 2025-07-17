@@ -54,7 +54,7 @@ let gameSettings = {
     particlesEnabled: true,
     theme: 'modern',
     accessibilityMode: 'normal',
-    bgmEnabled: true
+    bgmEnabled: false  // BGMは使用しない
 };
 
 // テーマ設定
@@ -88,7 +88,7 @@ const themes = {
 // サウンド関連
 let audioContext;
 let soundEnabled = true;
-let bgmEnabled = true;
+let bgmEnabled = false;  // BGMは使用しない
 let bgmGain;
 let bgmOscillator;
 
@@ -121,29 +121,53 @@ function playSound(frequency, duration, volume = 0.1, type = 'sine') {
     oscillator.stop(audioContext.currentTime + duration);
 }
 
+// Googleブロック崩しと同じ効果音
 function playBrickBreakSound() {
-    playSound(800, 0.1, 0.15, 'square');
+    playSound(600, 0.1, 0.4, 'square');
 }
 
 function playPaddleHitSound() {
-    playSound(200, 0.1, 0.1, 'sine');
+    playSound(800, 0.05, 0.3, 'sine');
 }
 
 function playWallHitSound() {
-    playSound(300, 0.05, 0.08, 'triangle');
+    playSound(400, 0.03, 0.2, 'triangle');
 }
 
 function playGameOverSound() {
-    setTimeout(() => playSound(150, 0.5, 0.2, 'sawtooth'), 0);
-    setTimeout(() => playSound(100, 0.5, 0.2, 'sawtooth'), 200);
-    setTimeout(() => playSound(75, 0.8, 0.2, 'sawtooth'), 400);
+    // Googleブロック崩しと同様の下降音
+    setTimeout(() => playSound(200, 0.2, 0.5, 'square'), 0);
+    setTimeout(() => playSound(150, 0.2, 0.5, 'square'), 200);
+    setTimeout(() => playSound(100, 0.2, 0.5, 'square'), 400);
 }
 
 function playGameWinSound() {
-    setTimeout(() => playSound(523, 0.2, 0.15, 'sine'), 0);
-    setTimeout(() => playSound(659, 0.2, 0.15, 'sine'), 200);
-    setTimeout(() => playSound(784, 0.2, 0.15, 'sine'), 400);
-    setTimeout(() => playSound(1047, 0.4, 0.15, 'sine'), 600);
+    // Googleブロック崩しと同様の上昇音
+    setTimeout(() => playSound(400, 0.1, 0.5, 'sine'), 0);
+    setTimeout(() => playSound(500, 0.1, 0.5, 'sine'), 100);
+    setTimeout(() => playSound(600, 0.1, 0.5, 'sine'), 200);
+    setTimeout(() => playSound(800, 0.2, 0.5, 'sine'), 300);
+}
+
+function playBallLostSound() {
+    if (!audioContext || !soundEnabled) return;
+    
+    // Googleブロック崩しと同様のボール落下音（下降する音）
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+    
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    
+    oscillator.type = 'sawtooth';
+    oscillator.frequency.value = 200;
+    oscillator.frequency.exponentialRampToValueAtTime(100, audioContext.currentTime + 0.3);
+    
+    gainNode.gain.value = 0.5;
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+    
+    oscillator.start(audioContext.currentTime);
+    oscillator.stop(audioContext.currentTime + 0.3);
 }
 
 // BGM機能 - 改良版
@@ -649,10 +673,12 @@ function activatePowerUp(type) {
             break;
         case 'paddleSize':
             activePowerUps.paddleSize = 1.5;
-            paddle.width = 100 * activePowerUps.paddleSize;
+            const baseWidth = Math.max(80, Math.min(200, canvas.width * 0.15));
+            paddle.width = baseWidth * activePowerUps.paddleSize;
             setTimeout(() => {
                 activePowerUps.paddleSize = 1.0;
-                paddle.width = 100;
+                const baseWidth = Math.max(80, Math.min(200, canvas.width * 0.15));
+                paddle.width = baseWidth;
             }, 10000);
             break;
         case 'slowMotion':
@@ -861,11 +887,15 @@ function updateGameStats() {
 function resizeCanvas() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
+    
+    // パドル幅を画面幅の15%に設定（Googleブロック崩しと同様）
+    const baseWidth = Math.max(80, Math.min(200, canvas.width * 0.15));
+    paddle.width = baseWidth * activePowerUps.paddleSize;
 }
 
 const paddle = {
     width: 100,
-    height: 15,
+    height: 12,  // Googleブロック崩しと同様により薄く
     x: 0,
     y: 0,
     speed: 8,
@@ -876,13 +906,13 @@ const balls = [];
 
 class Ball {
     constructor(x, y, dx, dy) {
-        this.radius = 8;
+        this.radius = 6;  // Googleブロック崩しと同様に小さく
         this.x = x || 0;
         this.y = y || 0;
-        this.speed = 5;
-        this.dx = dx || 5;
-        this.dy = dy || -5;
-        this.baseSpeed = 5;
+        this.speed = 3.5;  // Googleブロック崩しと同様に初期速度を遅く
+        this.dx = dx || 3.5;
+        this.dy = dy || -3.5;
+        this.baseSpeed = 3.5;
     }
 }
 
@@ -894,7 +924,7 @@ const bricks = {
     cols: 15,
     width: 0,
     height: 0,
-    padding: 5,
+    padding: 1,  // Googleブロック崩しと同様に最小の隙間
     offsetTop: 80,
     offsetLeft: 0,
     colors: [],
@@ -923,10 +953,10 @@ function updateBrickLayout() {
     
     const totalCols = bricks.cols;
     const totalPadding = (totalCols - 1) * bricks.padding;
-    const availableWidth = canvas.width - 40;
+    const availableWidth = canvas.width - 20;  // 最小マージン
     bricks.width = Math.floor((availableWidth - totalPadding) / totalCols);
     bricks.height = Math.floor(25 * layout.heightMultiplier);
-    bricks.offsetLeft = 20;
+    bricks.offsetLeft = 10;  // 最小オフセット
     
     console.log('Canvas size:', canvas.width, 'x', canvas.height);
     console.log('Brick size:', bricks.width, 'x', bricks.height);
@@ -1279,6 +1309,7 @@ function moveBall() {
     
     // 全てのボールが画面外に出た場合
     if (ball.y - ball.radius > canvas.height && balls.length === 0) {
+        playBallLostSound();  // ボール落下音を再生
         lives--;
         updateLives();
         if (lives === 0) {
@@ -1566,7 +1597,8 @@ function startGame() {
         laser: false,
         catch: false
     };
-    paddle.width = 100;
+    const baseWidth = Math.max(80, Math.min(200, canvas.width * 0.15));
+    paddle.width = baseWidth;
     
     updateScore();
     updateLives();
@@ -1713,9 +1745,10 @@ function applyDifficulty() {
     };
     
     const diff = difficulties[gameSettings.difficulty];
-    ball.baseSpeed = 5 * diff.speedMultiplier;
+    ball.baseSpeed = 3.5 * diff.speedMultiplier;
     ball.speed = ball.baseSpeed;
-    paddle.width = 100 * diff.paddleWidthMultiplier;
+    const baseWidth = Math.max(80, Math.min(200, canvas.width * 0.15));
+    paddle.width = baseWidth * diff.paddleWidthMultiplier;
 }
 
 function showSettings() {
